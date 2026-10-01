@@ -26,6 +26,7 @@ cache:
   max_object_size: 104857600
   enable_tags: true
   enable_stale: true
+  # redis_password: ""       # prefer REDIS_PASSWORD env var; never commit secrets
 
 metrics:
   port: 9091

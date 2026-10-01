@@ -2,12 +2,12 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-cdnsim-local-dev}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a '${REDIS_PASSWORD:-cdnsim-local-dev}' ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -17,7 +17,7 @@ services:
       context: ..
       dockerfile: deployments/Dockerfile.origin
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     environment:
       - ORIGIN_ID=origin-1
       - ORIGIN_PORT=9090
@@ -32,12 +32,14 @@ services:
       context: ..
       dockerfile: deployments/Dockerfile.edge
     ports:
-      - "8081:8080"
+      - "127.0.0.1:8081:8080"
     environment:
       - EDGE_ID=edge-us-east-1
       - EDGE_REGION=us-east-1
       - EDGE_PORT=8080
       - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-cdnsim-local-dev}
+      - EDGE_ADMIN_API_KEY=${EDGE_ADMIN_API_KEY:-}
       - ORIGIN_BACKENDS=http://origin:9090
     depends_on:
       redis:
@@ -55,12 +57,14 @@ services:
       context: ..
       dockerfile: deployments/Dockerfile.edge
     ports:
-      - "8082:8080"
+      - "127.0.0.1:8082:8080"
     environment:
       - EDGE_ID=edge-us-west-1
       - EDGE_REGION=us-west-1
       - EDGE_PORT=8080
       - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-cdnsim-local-dev}
+      - EDGE_ADMIN_API_KEY=${EDGE_ADMIN_API_KEY:-}
       - ORIGIN_BACKENDS=http://origin:9090
     depends_on:
       redis:
@@ -78,12 +82,14 @@ services:
       context: ..
       dockerfile: deployments/Dockerfile.edge
     ports:
-      - "8083:8080"
+      - "127.0.0.1:8083:8080"
     environment:
       - EDGE_ID=edge-eu-west-1
       - EDGE_REGION=eu-west-1
       - EDGE_PORT=8080
       - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-cdnsim-local-dev}
+      - EDGE_ADMIN_API_KEY=${EDGE_ADMIN_API_KEY:-}
       - ORIGIN_BACKENDS=http://origin:9090
     depends_on:
       redis:
@@ -101,8 +107,8 @@ services:
       context: ..
       dockerfile: deployments/Dockerfile.router
     ports:
-      - "80:80"
-      - "9091:9091"
+      - "127.0.0.1:80:80"
+      - "127.0.0.1:9091:9091"
     environment:
       - ROUTER_PORT=80
       - ROUTER_STRATEGY=latency
@@ -120,7 +126,7 @@ services:
   prometheus:
     image: prom/prometheus:v2.47.0
     ports:
-      - "9093:9090"
+      - "127.0.0.1:9093:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
@@ -131,10 +137,10 @@ services:
   grafana:
     image: grafana/grafana:10.1.0
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-cdnsim-grafana-change-me}
     volumes:
       - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
       - ./grafana/datasources:/etc/grafana/provisioning/datasources

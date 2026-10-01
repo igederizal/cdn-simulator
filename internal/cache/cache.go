@@ -37,7 +37,8 @@ type RedisCache struct {
 
 func NewRedisCache(cfg *config.CacheConfig, redisAddr string) (*RedisCache, error) {
 	client := redis.NewClient(&redis.Options{
-		Addr: redisAddr,
+		Addr:     redisAddr,
+		Password: cfg.RedisPassword,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -103,7 +104,7 @@ func (c *RedisCache) Set(ctx context.Context, entry *types.CacheEntry) error {
 		return err
 	}
 
-	ttl := time.Duration(entry.ExpiresAt - time.Now().Unix()) * time.Second
+	ttl := time.Duration(entry.ExpiresAt-time.Now().Unix()) * time.Second
 	if ttl < 0 {
 		ttl = time.Duration(c.config.DefaultTTL) * time.Second
 	}

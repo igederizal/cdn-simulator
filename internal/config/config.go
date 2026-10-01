@@ -10,22 +10,23 @@ import (
 )
 
 type Config struct {
-	Edge    EdgeConfig   `mapstructure:"edge"`
-	Origin  OriginConfig `mapstructure:"origin"`
-	Router  RouterConfig `mapstructure:"router"`
-	Cache   CacheConfig  `mapstructure:"cache"`
+	Edge    EdgeConfig    `mapstructure:"edge"`
+	Origin  OriginConfig  `mapstructure:"origin"`
+	Router  RouterConfig  `mapstructure:"router"`
+	Cache   CacheConfig   `mapstructure:"cache"`
 	Metrics MetricsConfig `mapstructure:"metrics"`
 	Logging LoggingConfig `mapstructure:"logging"`
 }
 
 type EdgeConfig struct {
-	ID                 string `mapstructure:"id"`
-	Region             string `mapstructure:"region"`
-	Port               int    `mapstructure:"port"`
-	RedisAddr          string `mapstructure:"redis_addr"`
-	Capacity           int    `mapstructure:"capacity"`
-	EnableCompression  bool   `mapstructure:"enable_compression"`
-	CompressionLevel   int    `mapstructure:"compression_level"`
+	ID                string `mapstructure:"id"`
+	Region            string `mapstructure:"region"`
+	Port              int    `mapstructure:"port"`
+	RedisAddr         string `mapstructure:"redis_addr"`
+	Capacity          int    `mapstructure:"capacity"`
+	EnableCompression bool   `mapstructure:"enable_compression"`
+	CompressionLevel  int    `mapstructure:"compression_level"`
+	AdminAPIKey       string `mapstructure:"admin_api_key"`
 }
 
 type OriginConfig struct {
@@ -35,20 +36,21 @@ type OriginConfig struct {
 }
 
 type RouterConfig struct {
-	Port               int      `mapstructure:"port"`
-	Strategy           string   `mapstructure:"strategy"`
-	HealthCheckInterval int     `mapstructure:"health_check_interval"`
-	GeoDBPath          string   `mapstructure:"geo_db_path"`
-	Edges              []string `mapstructure:"edges"`
+	Port                int      `mapstructure:"port"`
+	Strategy            string   `mapstructure:"strategy"`
+	HealthCheckInterval int      `mapstructure:"health_check_interval"`
+	GeoDBPath           string   `mapstructure:"geo_db_path"`
+	Edges               []string `mapstructure:"edges"`
 }
 
 type CacheConfig struct {
-	DefaultTTL            int   `mapstructure:"default_ttl"`
-	MaxTTL                int   `mapstructure:"max_ttl"`
-	StaleWhileRevalidate  int   `mapstructure:"stale_while_revalidate"`
-	MaxObjectSize         int64 `mapstructure:"max_object_size"`
-	EnableTags            bool  `mapstructure:"enable_tags"`
-	EnableStale           bool  `mapstructure:"enable_stale"`
+	DefaultTTL           int    `mapstructure:"default_ttl"`
+	MaxTTL               int    `mapstructure:"max_ttl"`
+	StaleWhileRevalidate int    `mapstructure:"stale_while_revalidate"`
+	MaxObjectSize        int64  `mapstructure:"max_object_size"`
+	EnableTags           bool   `mapstructure:"enable_tags"`
+	EnableStale          bool   `mapstructure:"enable_stale"`
+	RedisPassword        string `mapstructure:"redis_password"`
 }
 
 type MetricsConfig struct {
@@ -112,6 +114,8 @@ func bindEnv() {
 	viper.BindEnv("edge.region", "EDGE_REGION")
 	viper.BindEnv("edge.port", "EDGE_PORT")
 	viper.BindEnv("edge.redis_addr", "REDIS_ADDR")
+	viper.BindEnv("edge.admin_api_key", "EDGE_ADMIN_API_KEY")
+	viper.BindEnv("cache.redis_password", "REDIS_PASSWORD")
 	viper.BindEnv("origin.id", "ORIGIN_ID")
 	viper.BindEnv("origin.port", "ORIGIN_PORT")
 	viper.BindEnv("router.port", "ROUTER_PORT")

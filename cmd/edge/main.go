@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -80,10 +84,58 @@ func (s *EdgeServer) setupRoutes() {
 	{
 		api.GET("/*path", s.handleRequest)
 		api.HEAD("/*path", s.handleRequest)
-		api.POST("/purge", s.purgeCache)
-		api.POST("/purge/tags", s.purgeByTags)
-		api.POST("/warm", s.warmCache)
+
+		admin := api.Group("")
+		admin.Use(s.requireAPIKey())
+		{
+			admin.POST("/purge", s.purgeCache)
+			admin.POST("/purge/tags", s.purgeByTags)
+			admin.POST("/warm", s.warmCache)
+		}
 	}
+}
+
+// requireAPIKey guards admin endpoints. Secure by default: if no key is
+// configured, the admin API is disabled entirely.
+func (s *EdgeServer) requireAPIKey() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		configured := s.config.Edge.AdminAPIKey
+		if configured == "" {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+				"error": "admin API disabled: set EDGE_ADMIN_API_KEY",
+			})
+			return
+		}
+		provided := c.GetHeader("X-API-Key")
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(configured)) != 1 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid API key"})
+			return
+		}
+		c.Next()
+	}
+}
+
+// originURL builds a fetch URL and guarantees it stays on the configured
+// origin host, blocking SSRF attempts such as "@internal-host/".
+func (s *EdgeServer) originURL(path string) (string, error) {
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return "", fmt.Errorf("path must start with a single /")
+	}
+	if strings.Contains(path, "@") || strings.Contains(path, "://") {
+		return "", fmt.Errorf("path contains forbidden characters")
+	}
+	base, err := url.Parse(s.config.Origin.Backends[0])
+	if err != nil {
+		return "", fmt.Errorf("invalid origin backend: %w", err)
+	}
+	u, err := url.Parse(s.config.Origin.Backends[0] + path)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.Scheme != base.Scheme || u.Host != base.Host {
+		return "", fmt.Errorf("resolved host %q does not match origin", u.Host)
+	}
+	return u.String(), nil
 }
 
 func (s *EdgeServer) loggingMiddleware() gin.HandlerFunc {
@@ -157,9 +209,18 @@ func (s *EdgeServer) serveFromCache(c *gin.Context, entry *types.CacheEntry) {
 
 func (s *EdgeServer) fetchFromOrigin(c *gin.Context, key types.CacheKey) {
 	ctx := c.Request.Context()
-	originURL := s.config.Origin.Backends[0] + c.Request.URL.Path
+	originURL, err := s.originURL(c.Request.URL.Path)
+	if err != nil {
+		s.logger.Warn("Rejected origin fetch", zap.Error(err))
+		c.Status(http.StatusBadRequest)
+		return
+	}
 
-	req, _ := http.NewRequestWithContext(ctx, c.Request.Method, originURL, c.Request.Body)
+	req, err := http.NewRequestWithContext(ctx, c.Request.Method, originURL, c.Request.Body)
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
 	req.Header = c.Request.Header.Clone()
 
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -265,8 +326,23 @@ func (s *EdgeServer) warmCache(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	warmed := 0
+
+	invalid := make([]string, 0)
+	valid := make([]string, 0, len(req.URLs))
 	for _, url := range req.URLs {
+		if _, err := s.originURL(url); err != nil {
+			invalid = append(invalid, url)
+			continue
+		}
+		valid = append(valid, url)
+	}
+	if len(invalid) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid urls", "rejected": invalid})
+		return
+	}
+
+	warmed := 0
+	for _, url := range valid {
 		key := types.CacheKey(url)
 		if _, err := s.cache.Get(ctx, key); err == cache.ErrCacheMiss {
 			go s.prefetch(url)
@@ -279,9 +355,15 @@ func (s *EdgeServer) warmCache(c *gin.Context) {
 
 func (s *EdgeServer) prefetch(url string) {
 	ctx := context.Background()
-	originURL := s.config.Origin.Backends[0] + url
+	originURL, err := s.originURL(url)
+	if err != nil {
+		return
+	}
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", originURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", originURL, nil)
+	if err != nil {
+		return
+	}
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {

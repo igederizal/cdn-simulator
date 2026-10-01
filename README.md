@@ -113,15 +113,18 @@ go build -o cdnctl ./cmd/cli
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/*` | Serve content (cached) |
-| POST | `/api/v1/purge` | Purge by keys |
-| POST | `/api/v1/purge/tags` | Purge by tags |
-| POST | `/api/v1/warm` | Warm cache |
+| POST | `/api/v1/purge` | Purge by keys (requires `X-API-Key`) |
+| POST | `/api/v1/purge/tags` | Purge by tags (requires `X-API-Key`) |
+| POST | `/api/v1/warm` | Warm cache (requires `X-API-Key`) |
+
+Admin endpoints are disabled unless `EDGE_ADMIN_API_KEY` is set.
 
 ### Purge by Keys
 
 ```bash
 curl -X POST http://localhost:8081/api/v1/purge \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: $EDGE_ADMIN_API_KEY" \
   -d '{"keys": ["/api/v1/assets/logo.png", "/api/v1/assets/banner.png"]}'
 ```
 
@@ -130,6 +133,7 @@ curl -X POST http://localhost:8081/api/v1/purge \
 ```bash
 curl -X POST http://localhost:8081/api/v1/purge/tags \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: $EDGE_ADMIN_API_KEY" \
   -d '{"tags": ["product:123", "category:electronics"]}'
 ```
 
@@ -138,6 +142,7 @@ curl -X POST http://localhost:8081/api/v1/purge/tags \
 ```bash
 curl -X POST http://localhost:8081/api/v1/warm \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: $EDGE_ADMIN_API_KEY" \
   -d '{"urls": ["/api/v1/assets/logo.png", "/api/v1/assets/banner.png"]}'
 ```
 
@@ -162,6 +167,14 @@ cache:
 router:
   strategy: "latency"        # latency | geo | round_robin
 ```
+
+Security-related environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `EDGE_ADMIN_API_KEY` | API key for `/api/v1/purge`, `/purge/tags`, `/warm`. Admin API is disabled if unset. |
+| `REDIS_PASSWORD` | Redis password (compose default: `cdnsim-local-dev` — change in production). |
+| `GRAFANA_ADMIN_PASSWORD` | Grafana admin password (compose default: `cdnsim-grafana-change-me` — change in production). |
 
 ## Metrics
 
