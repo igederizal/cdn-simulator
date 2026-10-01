@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose file
+        run: docker compose -f deployments/docker-compose.yml config --quiet
+
+      - name: Build images
+        run: docker compose -f deployments/docker-compose.yml build
+
+      - name: Smoke test
+        run: |
+          docker compose -f deployments/docker-compose.yml up -d
+          sleep 20
+          curl -sf http://localhost:9090/health
+          curl -sf http://localhost:8081/health
+          curl -sI http://localhost/api/v1/ci-test | grep -i "X-Cache: MISS"
+          curl -sI http://localhost/api/v1/ci-test | grep -i "X-Cache: HIT"
+          docker compose -f deployments/docker-compose.yml down -v

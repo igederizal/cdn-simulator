@@ -108,7 +108,20 @@ func (c *RedisCache) Set(ctx context.Context, entry *types.CacheEntry) error {
 		ttl = time.Duration(c.config.DefaultTTL) * time.Second
 	}
 
-	return c.client.Set(ctx, string(entry.Key), data, ttl).Err()
+	if err := c.client.Set(ctx, string(entry.Key), data, ttl).Err(); err != nil {
+		return err
+	}
+
+	if c.config.EnableTags {
+		for _, tag := range entry.Tags {
+			tagKey := "tag:" + tag + ":" + string(entry.Key)
+			if err := c.client.Set(ctx, tagKey, string(entry.Key), ttl).Err(); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func (c *RedisCache) Delete(ctx context.Context, key types.CacheKey) error {
@@ -122,8 +135,14 @@ func (c *RedisCache) InvalidateByTags(ctx context.Context, tags []string) error 
 		if err != nil {
 			return err
 		}
-		if len(keys) > 0 {
-			if err := c.client.Del(ctx, keys...).Err(); err != nil {
+		for _, tagKey := range keys {
+			contentKey, err := c.client.Get(ctx, tagKey).Result()
+			if err == nil && contentKey != "" {
+				if err := c.client.Del(ctx, contentKey).Err(); err != nil {
+					return err
+				}
+			}
+			if err := c.client.Del(ctx, tagKey).Err(); err != nil {
 				return err
 			}
 		}
@@ -143,11 +162,7 @@ func (c *RedisCache) InvalidateByPattern(ctx context.Context, pattern string) er
 }
 
 func (c *RedisCache) GetStats(ctx context.Context) (*CacheStats, error) {
-	info, err := c.client.Info(ctx, "memory", "stats").Result()
-	if err != nil {
-		return c.stats, err
-	}
-	_ = info
+	c.client.Info(ctx, "memory", "stats")
 	return c.stats, nil
 }
 

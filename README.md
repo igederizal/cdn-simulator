@@ -181,16 +181,64 @@ Key metrics exposed at `/metrics`:
 
 ## Testing
 
+### Unit Tests
+
 ```bash
-# Run unit tests
-go test ./...
-
-# Load test with hey
-hey -n 10000 -c 100 http://localhost/api/v1/test
-
-# Cache hit ratio test
-for i in {1..100}; do curl -s http://localhost/api/v1/test > /dev/null; done
+go test ./...          # all tests
+go test -v ./internal/cache/    # cache tests (uses miniredis, no Redis server needed)
+go test -v ./internal/routing/  # routing tests
+go test -cover ./...   # with coverage
 ```
+
+Covered behavior:
+- **routing** — edge selection (least-loaded, region preference, unhealthy/full skip), origin selection (health, weight fallback), register/deregister
+- **cache** — set/get, TTL expiry, stale-while-revalidate, delete, invalidation by tags & pattern, hit/miss stats
+
+### CI
+
+Setiap push ke `main` / pull request menjalankan GitHub Actions (`.github/workflows/ci.yml`):
+
+1. **test job** — `go vet`, `go build`, `go test -race` + coverage report
+2. **docker job** — validasi compose, build semua image, smoke test (health check + verifikasi MISS → HIT di CI)
+
+Lihat badge status di halaman repo.
+
+### Load Test
+
+Stack harus sudah jalan (`docker compose up -d`), lalu:
+
+```powershell
+# Windows
+.\scripts\loadtest.ps1 -Requests 500 -UniquePaths 5
+```
+
+```bash
+# Linux/macOS (butuh hey: go install github.com/rakyll/hey@latest)
+hey -n 500 -c 20 http://localhost/api/v1/loadtest
+curl -s http://localhost:8081/metrics | grep cdn_cache
+```
+
+Contoh hasil (`-Requests 500 -UniquePaths 5`):
+
+```
+==========================================
+ Load Test Results
+==========================================
+ Requests      : 500
+ Unique paths  : 5
+ Errors        : 0
+ HIT / MISS    : 495 / 5
+ Client ratio  : 99%
+ Metrics ratio : 98.7%
+ Total time    : 1.17s
+ Throughput    : 427.3 req/s
+ Avg latency   : 2.3 ms
+ P95 latency   : 3.1 ms
+==========================================
+```
+
+> 5 path unik × 1 request pertama MISS = 5 MISS, sisanya HIT → membuktikan edge cache bekerja.
+
 
 ## Project Structure
 
