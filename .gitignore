@@ -5,9 +5,9 @@
 *.so
 *.dylib
 cdnctl
-edge
-origin
-router
+/edge
+/origin
+/router
 
 # Test binary
 *.test
