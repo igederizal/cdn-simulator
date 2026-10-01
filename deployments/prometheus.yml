@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'cdn-edge'
+    static_configs:
+      - targets: ['edge-us-east:8080', 'edge-us-west:8080', 'edge-eu-west:8080']
+    metrics_path: '/metrics'
+
+  - job_name: 'cdn-origin'
+    static_configs:
+      - targets: ['origin:9090']
+    metrics_path: '/metrics'
+
+  - job_name: 'cdn-router'
+    static_configs:
+      - targets: ['router:9091']
+    metrics_path: '/metrics'
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
