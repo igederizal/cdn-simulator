@@ -7,7 +7,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /router ./cmd/router
 
-FROM alpine:3.19
+FROM alpine:3.24
 RUN apk --no-cache add ca-certificates wget
 COPY --from=builder /router /router
 COPY config.yaml /config.yaml

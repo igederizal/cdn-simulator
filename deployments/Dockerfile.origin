@@ -7,7 +7,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /origin ./cmd/origin
 
-FROM alpine:3.19
+FROM alpine:3.24
 RUN apk --no-cache add ca-certificates wget
 COPY --from=builder /origin /origin
 COPY config.yaml /config.yaml
