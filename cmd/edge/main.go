@@ -20,6 +20,13 @@ import (
 	"github.com/yourusername/cdn-simulator/pkg/types"
 )
 
+// Version information (set by goreleaser)
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 type EdgeServer struct {
 	cache  cache.Cache
 	config *config.Config
@@ -53,7 +60,12 @@ func main() {
 	server.setupRoutes()
 
 	addr := ":" + strconv.Itoa(cfg.Edge.Port)
-	logger.Info("Starting edge server", zap.String("addr", addr), zap.String("region", cfg.Edge.Region))
+	logger.Info("Starting edge server",
+		zap.String("addr", addr),
+		zap.String("region", cfg.Edge.Region),
+		zap.String("version", version),
+		zap.String("commit", commit),
+	)
 
 	srv := &http.Server{
 		Addr:    addr,
@@ -95,49 +107,6 @@ func (s *EdgeServer) setupRoutes() {
 	}
 }
 
-// requireAPIKey guards admin endpoints. Secure by default: if no key is
-// configured, the admin API is disabled entirely.
-func (s *EdgeServer) requireAPIKey() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		configured := s.config.Edge.AdminAPIKey
-		if configured == "" {
-			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
-				"error": "admin API disabled: set EDGE_ADMIN_API_KEY",
-			})
-			return
-		}
-		provided := c.GetHeader("X-API-Key")
-		if subtle.ConstantTimeCompare([]byte(provided), []byte(configured)) != 1 {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid API key"})
-			return
-		}
-		c.Next()
-	}
-}
-
-// originURL builds a fetch URL and guarantees it stays on the configured
-// origin host, blocking SSRF attempts such as "@internal-host/".
-func (s *EdgeServer) originURL(path string) (string, error) {
-	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
-		return "", fmt.Errorf("path must start with a single /")
-	}
-	if strings.Contains(path, "@") || strings.Contains(path, "://") {
-		return "", fmt.Errorf("path contains forbidden characters")
-	}
-	base, err := url.Parse(s.config.Origin.Backends[0])
-	if err != nil {
-		return "", fmt.Errorf("invalid origin backend: %w", err)
-	}
-	u, err := url.Parse(s.config.Origin.Backends[0] + path)
-	if err != nil {
-		return "", fmt.Errorf("invalid URL: %w", err)
-	}
-	if u.Scheme != base.Scheme || u.Host != base.Host {
-		return "", fmt.Errorf("resolved host %q does not match origin", u.Host)
-	}
-	return u.String(), nil
-}
-
 func (s *EdgeServer) loggingMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -171,6 +140,7 @@ func (s *EdgeServer) healthCheck(c *gin.Context) {
 		"status":  "healthy",
 		"region":  s.config.Edge.Region,
 		"edge_id": s.config.Edge.ID,
+		"version": version,
 	})
 }
 
@@ -329,12 +299,12 @@ func (s *EdgeServer) warmCache(c *gin.Context) {
 
 	invalid := make([]string, 0)
 	valid := make([]string, 0, len(req.URLs))
-	for _, url := range req.URLs {
-		if _, err := s.originURL(url); err != nil {
-			invalid = append(invalid, url)
+	for _, u := range req.URLs {
+		if _, err := s.originURL(u); err != nil {
+			invalid = append(invalid, u)
 			continue
 		}
-		valid = append(valid, url)
+		valid = append(valid, u)
 	}
 	if len(invalid) > 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid urls", "rejected": invalid})
@@ -342,10 +312,10 @@ func (s *EdgeServer) warmCache(c *gin.Context) {
 	}
 
 	warmed := 0
-	for _, url := range valid {
-		key := types.CacheKey(url)
+	for _, u := range valid {
+		key := types.CacheKey(u)
 		if _, err := s.cache.Get(ctx, key); err == cache.ErrCacheMiss {
-			go s.prefetch(url)
+			go s.prefetch(u)
 			warmed++
 		}
 	}
@@ -413,6 +383,45 @@ func (s *EdgeServer) reportMetrics() {
 			metrics.SetCacheSize(s.config.Edge.Region, float64(stats.MemoryUsed))
 		}
 	}
+}
+
+func (s *EdgeServer) requireAPIKey() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		configured := s.config.Edge.AdminAPIKey
+		if configured == "" {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+				"error": "admin API disabled: set EDGE_ADMIN_API_KEY",
+			})
+			return
+		}
+		provided := c.GetHeader("X-API-Key")
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(configured)) != 1 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid API key"})
+			return
+		}
+		c.Next()
+	}
+}
+
+func (s *EdgeServer) originURL(path string) (string, error) {
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return "", fmt.Errorf("path must start with a single /")
+	}
+	if strings.Contains(path, "@") || strings.Contains(path, "://") {
+		return "", fmt.Errorf("path contains forbidden characters")
+	}
+	base, err := url.Parse(s.config.Origin.Backends[0])
+	if err != nil {
+		return "", fmt.Errorf("invalid origin backend: %w", err)
+	}
+	u, err := url.Parse(s.config.Origin.Backends[0] + path)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.Scheme != base.Scheme || u.Host != base.Host {
+		return "", fmt.Errorf("resolved host %q does not match origin", u.Host)
+	}
+	return u.String(), nil
 }
 
 func cacheable(statusCode int, headers map[string]string) bool {
